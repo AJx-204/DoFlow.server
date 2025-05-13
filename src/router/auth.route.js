@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { register, verifyOtp, resendOtp, login, updateUser, logOut, resetPasswordOtp, forgotPassowrd} from '../controllers/auth.control.js'
+import { register, verifyOtp, resendOtp, login, updateUser, logOut, resetPasswordOtp, forgotPassword} from '../controllers/auth.control.js'
 import { upload } from '../middleware/multer.middle.js';
 import { verifyJwt } from '../middleware/auth.middle.js'
 
@@ -30,7 +30,7 @@ authRouter.route('/logOut').post(verifyJwt, logOut);
 
 authRouter.route('/resetPasswordOtp').post(verifyJwt, resetPasswordOtp)
 
-authRouter.route('/forgotPassowrd').put(verifyJwt, forgotPassowrd)
+authRouter.route('/forgotPassword').put(verifyJwt, forgotPassword)
 
 
 export default authRouter;

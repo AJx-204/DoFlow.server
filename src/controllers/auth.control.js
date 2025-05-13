@@ -25,12 +25,12 @@ const register = asyncFunc(async(req, res)=>{
        'User already exists with this email'
     )
    };
-   if (existingUser && !existingUser.isVerified) {
+   if (existingUser) {
       return res.status(400).json(
           new ApiRes(
               400,
               { userId: existingUser._id },
-              'User already exists but email not verified. You can request a new OTP.'
+              'User already exists with this Email'
           )
       );
    };
@@ -348,7 +348,7 @@ const resetPasswordOtp = asyncFunc(async(req, res)=>{
     );
 });
 
-const forgotPassowrd = asyncFunc(async(req, res)=>{
+const forgotPassword = asyncFunc(async(req, res)=>{
     const { otpCode, password } = req.body;
     const user = req.user;
     if(!otpCode || !password){
@@ -391,4 +391,4 @@ const forgotPassowrd = asyncFunc(async(req, res)=>{
 });
 
 
-export { register, verifyOtp, resendOtp, login, updateUser, logOut, resetPasswordOtp, forgotPassowrd}
+export { register, verifyOtp, resendOtp, login, updateUser, logOut, resetPasswordOtp, forgotPassword}
