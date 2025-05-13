@@ -159,7 +159,7 @@ const addMemberInProject = asyncFunc(async(req, res)=>{
     if(!isMemberInOrg){
         throw new ApiError(
             404,
-            "Member not part of this organization"
+            "The Member is not part of this organization"
         )
     };
     const isMemberInProject = project.members.some(
@@ -309,6 +309,377 @@ const addTeamInProject = asyncFunc(async(req, res)=>{
     );
 });
 
+const removeMemberFromProject = asyncFunc(async(req, res)=>{
+    const { memberId } = req.params;
+    const project = req.project;
+    const user = req.user;
+    const org = req.org;
+    if (!mongoose.Types.ObjectId.isValid(memberId)) {
+         throw new ApiError(400, "Invalid member ID");
+    };
+    const isMemberInProject = project.members.some(
+        (m) => m.member.toString() == memberId.toString()
+    );
+    if(!isMemberInProject){
+        throw new ApiError(
+            404,
+            "Member not found in project"
+        )
+    };
+    const isOwnerOfProject = project.createdBy.toString() == memberId.toString();
+    if(isOwnerOfProject){
+        throw new ApiError(
+            403,
+            "You can't Remove the owner of project from the project"
+        )
+    };
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+        const removedMember = await User.findByIdAndUpdate(memberId,
+            {
+                $pull:{
+                    inProject:{
+                        project:project._id
+                    }
+                }
+            },{ session }
+        );
+        project.members.pull({
+            member:memberId
+        });
+        await project.save({ session });
+        sendEmail({
+            to:removedMember.email,
+            subject:`Notice: you have been removed from the project ${project.projectName}`,
+            html: `
+                <div style="max-width: 600px; margin: auto; padding: 24px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px;">
+                    <h2 style="color: #d32f2f; font-size: 22px; margin-bottom: 10px;">🚫 Removed from Project</h2>
+                    <p style="font-size: 16px; color: #333;">Hi <strong>${removedMember.userName}</strong>,</p>
+                    <p style="font-size: 15px; color: #444; line-height: 1.6;">
+                        We wanted to let you know that you have been removed from the project 
+                        <strong>"${project.projectName}"</strong> in the organization 
+                        <strong style="color: green;">${org.orgName}</strong>.
+                    </p>
+                    <p style="font-size: 15px; color: #444;">
+                        If you believe this was a mistake, please get in touch with your organization administrator or the project owner.
+                    </p>
+                    <div style="margin: 24px 0; border-left: 4px solid #f44336; padding-left: 16px; background-color: #fdf0f0; border-radius: 4px;">
+                        <p style="margin: 0; font-size: 14px; color: #555;"><strong>Removed by:</strong> ${user.userName}</p>
+                        <p style="margin: 0; font-size: 14px; color: #555;"><strong>Date:</strong> ${new Date().toLocaleString()}</p>
+                    </div>
+                    <p style="font-size: 14px; color: #777; margin-top: 20px;">— The DoFlow Team</p>
+                    <p style="font-size: 12px; color: #aaa; text-align: center; margin-top: 30px;">
+                        This is an automated message. Please do not reply.
+                    </p>
+                </div>
+            `
+        });
+        await session.commitTransaction();
+        session.endSession();
+        const populatedProject = await project.populate([
+            {
+                path:'createdBy',
+                select:"userName email profilePhoto"
+            },
+            {
+                path:'members.member',
+                select:'userName email profilePhoto'
+            }
+        ]);
+        return res.status(200)
+        .json(
+            new ApiRes(
+                200,
+                populatedProject,
+                "member successfully removed from the project"
+            )
+        );
+    } catch (error) {
+        await session.abortTransaction();
+        session.endSession();
+        throw new ApiError(
+            500,
+            "Failed to remove Member from the project due to server, please try again later"
+        )
+    };
+});
+
+const removeTeamFromProject = asyncFunc(async(req, res)=>{
+    const { teamId } = req.params;
+    const project = req.project;
+    const org = req.org;
+    const user = req.user;
+    if (!mongoose.Types.ObjectId.isValid(teamId)) {
+        throw new ApiError(400, "Invalid team ID");
+    };
+    const isTeamInProject = project.teams.some(t => t.toString() === teamId.toString());
+    if (!isTeamInProject) {
+        throw new ApiError(
+            404, 
+            "Team is not part of this project"
+        );
+    };
+    const team = await Team.findOne({ _id: teamId, inOrg: org._id }).populate({
+        path: 'members.member',
+        select: 'userName email inProject'
+    });
+    if (!team) {
+        throw new ApiError(
+            404, "Team not found in this organization"
+        );
+    }
+    const session = await mongoose.startSession();
+    session.startTransaction();
+     try {
+        project.teams.pull(teamId);
+        const removedMembers = [];
+        for (const tm of team.members) {
+            const memberId = tm.member._id.toString();
+            const isInProject = project.members.some(m => m.member.toString() === memberId);
+            if (!isInProject) continue;
+            const isInOtherTeam = await Team.exists({
+                _id: { $ne: teamId },
+                _id: { $in: project.teams },
+                'members.member': memberId
+            });
+            const isOwner = memberId === project.createdBy.toString();
+            if (!isInOtherTeam && !isOwner) {
+                project.members = project.members.filter(m => m.member.toString() !== memberId);
+                await User.updateOne(
+                    { _id: memberId },
+                    { $pull: { inProject: { project: project._id } } },
+                    { session }
+                );
+                removedMembers.push(tm.member); 
+            }
+        }
+        await project.save({ session });
+        for (const removedMember of removedMembers) {
+            sendEmail({
+                to: removedMember.email,
+                subject: `Notice: You have been removed from the project ${project.projectName}`,
+                html: `
+                <div style="max-width: 600px; margin: auto; padding: 24px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px;">
+                    <h2 style="color: #d32f2f; font-size: 22px; margin-bottom: 10px;">🚫 Removed from Project</h2>
+                    <p style="font-size: 16px; color: #333;">Hi <strong>${removedMember.userName}</strong>,</p>
+                    <p style="font-size: 15px; color: #444; line-height: 1.6;">
+                        You have been removed from the project 
+                        <strong>"${project.projectName}"</strong> in the organization 
+                        <strong style="color: green;">${org.orgName}</strong>.
+                    </p>
+                    <p style="font-size: 15px; color: #444;">
+                        If you believe this was a mistake, please contact your organization administrator or the project owner.
+                    </p>
+                    <div style="margin: 24px 0; border-left: 4px solid #f44336; padding-left: 16px; background-color: #fdf0f0; border-radius: 4px;">
+                        <p style="margin: 0; font-size: 14px; color: #555;"><strong>Removed by:</strong> ${user.userName}</p>
+                        <p style="margin: 0; font-size: 14px; color: #555;"><strong>Date:</strong> ${new Date().toLocaleString()}</p>
+                    </div>
+                    <p style="font-size: 14px; color: #777; margin-top: 20px;">— The DoFlow Team</p>
+                    <p style="font-size: 12px; color: #aaa; text-align: center; margin-top: 30px;">
+                        This is an automated message. Please do not reply.
+                    </p>
+                </div>
+                `
+            });
+        }
+        await session.commitTransaction();
+        session.endSession();
+        const populatedProject = await project.populate([
+            { path: "createdBy", select: "userName email profilePhoto" },
+            { path: "members.member", select: "userName email profilePhoto" },
+            { path: "teams", select: "teamName" }
+        ]);
+        return res.status(200).json(
+            new ApiRes(
+                200,
+                populatedProject,
+                `Team '${team.teamName}' and its members removed from the project`
+            )
+        );
+    } catch (error) {
+        await session.abortTransaction();
+        session.endSession();
+        throw new ApiError(
+            500, 
+            "Failed to remove team from the project. Please try again later."
+        );
+    };
+});
+
+const changeProjectMemberRole = asyncFunc(async(req, res)=>{
+    const { asRoleOf } = req.body;
+    const { memberId } = req.params;
+    const user = req.user;
+    const project = req.project;
+    if (!mongoose.Types.ObjectId.isValid(memberId)) {
+        throw new ApiError(400, "Invalid member ID");
+    };
+    const isMemberInProject = project.members.some(
+        (m) => m.member.toString() == memberId.toString()
+    );
+    if(!isMemberInProject){
+        throw new ApiError(
+            404,
+            "The member is not part of this project"
+        )
+    };
+    const isOwner = user._id.toString() == project.createdBy.toString();
+    if(isOwner){
+        throw new ApiError(
+            403,
+            "You can't change role of a project owner"
+        )
+    };
+    const validRoles = ['admin', 'moderator', 'leader', 'member', 'viewer'];
+    if(!validRoles.includes(asRoleOf)){
+        throw new ApiError(
+            400,
+            "Invalid role"
+        )
+    };
+    const member = project.members.find(
+        (m) => m.member.toString() === memberId.toString()
+    );
+    if (member) {
+        member.role = asRoleOf;
+    }
+    await project.save();
+    await User.updateOne(
+        { _id: memberId, "inProject.project": project._id },
+        { $set: { "inProject.$.role": asRoleOf } }
+    );
+    const populatedProject = await project.populate([
+         {
+            path:"createdBy",
+            select:"userName email profilePhoto"
+        },{
+            path:"members.member",
+            select:"userName email profilePhoto"
+        }
+    ]);
+    return res.status(200)
+    .json(
+        new ApiRes(
+            200,
+            populatedProject,
+            "project owner change successfully"
+        )
+    );
+});
+
+const leaveProject = asyncFunc(async(req, res)=>{
+    const project = req.project;
+    const user = req.user;
+    const userId = user._id.toString();
+    const projectId = project._id;
+    if (userId === project.createdBy.toString()) {
+        throw new ApiError(
+            403, 
+            "Project owner can't leave the project."
+        );
+    };
+    const isInProject = project.members.some(
+        m => m.member.toString() === userId
+    );
+    if (!isInProject) {
+        throw new ApiError(
+            400, 
+            "You are not a member of this project."
+        );
+    };
+    const session = await mongoose.startSession();
+    session.startTransaction();
+      try {
+        project.members = project.members.filter(
+            m => m.member.toString() !== userId
+        );
+        await User.updateOne(
+            { _id: userId },
+            { $pull: { 
+                inProject: 
+                { project: projectId } 
+              } 
+            },
+            { session }
+        );
+        await project.save({ session });
+        await session.commitTransaction();
+        session.endSession();
+        return res.status(200).json(
+            new ApiRes(
+                200,
+                null,
+                `You have successfully left the project '${project.projectName}'.`
+            )
+        );
+    } catch (error) {
+        await session.abortTransaction();
+        session.endSession();
+        throw new ApiError(
+            500,
+            "Failed to leave the project. Please try again later."
+        );
+    }
+});
+
+const transferOwnershipOfProject = asyncFunc(async(req, res)=>{
+    const { memberId } = req.params;
+    const user = req.user;
+    const project = req.project;
+    if (!mongoose.Types.ObjectId.isValid(memberId)) {
+        throw new ApiError(400, "Invalid member ID");
+    };
+    const isMemberInProject = project.members.some(
+        (m) => m.member.toString() == memberId.toString()
+    );
+    if(!isMemberInProject){
+        throw new ApiError(
+            404,
+            "The member is not part of this project"
+        )
+    };
+    const isOwner = user._id.toString() == project.createdBy.toString();
+    if(!isOwner){
+        throw new ApiError(
+            403,
+            "only project owner can transfer ownership or the project"
+        )
+    };
+    project.createdBy = memberId;
+    const member = project.members.find(
+        (m) => m.member.toString() === memberId.toString()
+    );
+    if (member) {
+        member.role = "admin";
+    }
+    await project.save();
+    await User.updateOne(
+        {_id:memberId, "inProject.project":project._id},
+        {
+            $set:{
+                "inProject.$.role":"admin"
+            }
+        }
+    );
+    const populatedProject = await project.populate([
+        {
+            path:"createdBy",
+            select:"userName email profilePhoto"
+        },{
+            path:"members.member",
+            select:"userName email profilePhoto"
+        }
+    ]);
+    return res.status(200)
+    .json(
+        new ApiRes(
+            200,
+            populatedProject,
+            "project owner change successfully"
+        )
+    );
+});
 
 
 
@@ -318,4 +689,9 @@ export {
     deleteProject,
     addMemberInProject,
     addTeamInProject,
+    removeMemberFromProject,
+    removeTeamFromProject,
+    changeProjectMemberRole,
+    leaveProject,
+    transferOwnershipOfProject,
 }
