@@ -524,7 +524,7 @@ const changeProjectMemberRole = asyncFunc(async(req, res)=>{
             "The member is not part of this project"
         )
     };
-    const isOwner = user._id.toString() == project.createdBy.toString();
+    const isOwner = memberId.toString() == project.createdBy.toString();
     if(isOwner){
         throw new ApiError(
             403,
@@ -563,7 +563,7 @@ const changeProjectMemberRole = asyncFunc(async(req, res)=>{
         new ApiRes(
             200,
             populatedProject,
-            "project owner change successfully"
+            "member role updated successfully"
         )
     );
 });
