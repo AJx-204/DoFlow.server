@@ -1,11 +1,7 @@
 import mongoose from "mongoose";
-import Project from "../model/project/Project.js";
-import Team from "../model/Team.js";
-import User from "../model/User.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiRes } from "../utils/ApiRes.js";
 import { asyncFunc } from "../utils/asyncFunc.js";
-import { sendEmail } from '../service/SendEmail.js';
 import Section from "../model/project/Section.js";
 
 

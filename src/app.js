@@ -7,6 +7,7 @@ import errorHandler from "./utils/errorHandler.js";
 import teamRouter from "./router/team.route.js";
 import projectRouter from "./router/project.route.js";
 import sectionRouter from "./router/section.route.js";
+import taskRouter from "./router/task.route.js";
 
 
 const app = express();
@@ -35,8 +36,11 @@ app.use('/api/v1/project', projectRouter)
 
 app.use('/api/v1/section', sectionRouter)
 
+app.use('/api/v1/task', taskRouter)
+
 
 app.use(errorHandler);
+
 
 
 export default app;

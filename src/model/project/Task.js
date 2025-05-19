@@ -44,8 +44,14 @@ const taskSchema = new mongoose.Schema(
             ref: 'Section',
             required: true
         },
-        subTasks:[
+        subTasks:[  
             {
+                addedBy:{
+                  type:mongoose.Schema.Types.ObjectId,
+                  ref:'User',
+                  required:true,
+                  trim: true
+                },
                 title:{
                     type:String,
                     required:true,
@@ -83,19 +89,35 @@ const taskSchema = new mongoose.Schema(
         ],
         links:[
            {
+              addedBy:{
+                  type:mongoose.Schema.Types.ObjectId,
+                  ref:'User',
+                  required:true,
+                  trim: true
+              },
               label:{
                  type:String,
+                 required:true,
                  trim: true
               },
               url:{
                  type:String,
                  required:true,
                  trim: true
+              },
+              addedAt:{
+                type:Date,
+                default:Date.now
               }
            },
         ],
         attachments:[
             {
+                addedBy:{
+                  type:mongoose.Schema.Types.ObjectId,
+                  ref:'User',
+                  required:true,
+                }, 
                 fileName:{
                     type:String,
                     trim: true
@@ -105,7 +127,7 @@ const taskSchema = new mongoose.Schema(
                     required:true,
                     trim: true
                 },
-                uploadedAt:{
+                addedAt:{
                     type:Date,
                     default:Date.now
                 }
