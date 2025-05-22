@@ -7,8 +7,46 @@ import crypto from 'crypto';
 import { generateTokens } from '../utils/Token.js'
 import { getCookieOptions } from '../const.js'
 import { sendEmail } from '../service/SendEmail.js'
-import bcrypt from 'bcrypt'
 
+
+const getUser = asyncFunc(async(req, res)=>{
+    const userId = req.user._id;
+    if (!userId) {
+      throw new ApiError(
+        401, 
+        'Unauthorized'
+      )
+    };
+    const user = await User.findById(userId).select('-password -refreshToken -otp');
+    if (!user) {
+      throw new ApiError(
+        404, 
+        'User not found'
+      );
+    };
+    if(!user.isVerified){
+    return res.status(403)
+     .json({
+        success:false,
+        needsVerification: true,
+        message: 'Email is not verified. Please verify your email.',
+        userEmail:user.email
+     })
+   };
+    const { accessToken, refreshToken } = await generateTokens(user._id);
+    user.refreshToken = refreshToken;
+    await user.save();
+    return res.status(200)
+    .cookie('accessToken', accessToken, getCookieOptions('access'))
+    .cookie('refreshToken', refreshToken, getCookieOptions('refresh'))
+    .json(
+        new ApiRes(
+            200,
+            user,
+            "User authenticated successfully"
+        )
+    )
+});
 
 const register = asyncFunc(async(req, res)=>{
    const { userName, email, password } = req.body;
@@ -39,12 +77,6 @@ const register = asyncFunc(async(req, res)=>{
    if(profilePhotoUrl){
        profilePhoto  = await uploadOnCloudinary(profilePhotoUrl)
    };
-   if(!profilePhoto){
-     throw new ApiError(
-        500,
-         'Profile picture upload failed. Please try again'
-     )
-   };
    const otpCode = crypto.randomInt(100000, 1000000).toString();
    const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); 
    const user = await User.create({
@@ -58,7 +90,7 @@ const register = asyncFunc(async(req, res)=>{
     },
     isVerified: false,
    });
-   await sendEmail({
+   sendEmail({
       to: email,
       subject: 'Verify your Email - OTP Code',
       html: `
@@ -91,7 +123,7 @@ const register = asyncFunc(async(req, res)=>{
    .json(
      new ApiRes(
         201,
-        {userId : createdUser._id},
+        {userEmail : createdUser.email},
         'User register successfuly, OTP has been sent to your email'
      )
    );
@@ -132,12 +164,18 @@ const verifyOtp = asyncFunc(async(req, res)=>{
     };
     user.isVerified = true;
     user.otp = undefined;
-    const verifiedUser = await user.save();
+    await user.save();
+    const { accessToken, refreshToken } = await generateTokens(user._id);
+    const logedinUser = await User.findById(user._id).select(
+     '-password -refreshToken -otp'
+    );
     return res.status(200)
+    .cookie('accessToken', accessToken, getCookieOptions('access'))
+    .cookie('refreshToken', refreshToken, getCookieOptions('refresh'))
     .json(
         new ApiRes(
             200,
-            null,
+            logedinUser,
             'Email successfully verified. You can now log in.'
         )
     );
@@ -215,7 +253,7 @@ const login = asyncFunc(async(req, res)=>{
    if(!userExists){
     throw new ApiError(
         400,
-        'User with email not exists Please register first'
+        'User with this email dose not exists'
     )
    };
    const isPasswordValid = await userExists.isPasswordCorrect(password);
@@ -226,10 +264,13 @@ const login = asyncFunc(async(req, res)=>{
     )
    };
    if(!userExists.isVerified){
-     throw new ApiError(
-        400,
-        'Email is not verified , please verify your email'
-     )
+    return res.status(403)
+     .json({
+        success:false,
+        needsVerification: true,
+        message: 'Email is not verified. Please verify your email.',
+        userEmail:userExists.email
+     })
    };
    const { accessToken, refreshToken } = await generateTokens(userExists._id);
    const logedinUser = await User.findById(userExists._id).select(
@@ -391,4 +432,4 @@ const forgotPassword = asyncFunc(async(req, res)=>{
 });
 
 
-export { register, verifyOtp, resendOtp, login, updateUser, logOut, resetPasswordOtp, forgotPassword}
+export { getUser, register, verifyOtp, resendOtp, login, updateUser, logOut, resetPasswordOtp, forgotPassword}

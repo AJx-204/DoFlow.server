@@ -14,6 +14,7 @@ export const getCookieOptions = (type = "access") => {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
+      path: '/',
       maxAge: parseEnvTime(expiry),
     };
   };

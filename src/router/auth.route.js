@@ -1,10 +1,12 @@
 import { Router } from "express";
-import { register, verifyOtp, resendOtp, login, updateUser, logOut, resetPasswordOtp, forgotPassword} from '../controllers/auth.control.js'
+import { getUser, register, verifyOtp, resendOtp, login, updateUser, logOut, resetPasswordOtp, forgotPassword} from '../controllers/auth.control.js'
 import { upload } from '../middleware/multer.middle.js';
 import { verifyJwt } from '../middleware/auth.middle.js'
 
 
 const authRouter = Router();
+
+authRouter.route('/getUser').get(verifyJwt, getUser)
 
 authRouter.route('/register').post(
    upload.single(

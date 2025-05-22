@@ -8,6 +8,7 @@ import teamRouter from "./router/team.route.js";
 import projectRouter from "./router/project.route.js";
 import sectionRouter from "./router/section.route.js";
 import taskRouter from "./router/task.route.js";
+import getRouter from "./router/get.route.js";
 
 
 const app = express();
@@ -15,6 +16,7 @@ const app = express();
 // middleware
 
 app.use(cors({
+    origin: ['http://localhost:5173','http://192.168.43.223:5173'],
     credentials:true
 }));
 app.use(express.json());
@@ -37,6 +39,8 @@ app.use('/api/v1/project', projectRouter)
 app.use('/api/v1/section', sectionRouter)
 
 app.use('/api/v1/task', taskRouter)
+
+app.use('/api/v1', getRouter)
 
 
 app.use(errorHandler);
